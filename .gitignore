@@ -1,0 +1,5 @@
+.env
+.venv
+*.html
+*.csv
+!other_datasources/etf_list.csv

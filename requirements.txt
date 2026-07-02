@@ -1,0 +1,13 @@
+polars
+polygon-api-client
+numpy
+pandas
+scipy
+requests
+google-genai
+pyarrow
+jupyter
+ipykernel
+plotly
+matplotlib
+python-dotenv
