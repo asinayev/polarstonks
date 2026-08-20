@@ -11,13 +11,15 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def run_script(script_name):
+def run_script(script_name, extra_args=None):
     """Runs a script from the src directory."""
     script_path = os.path.join(os.path.dirname(__file__), script_name)
     logger.info(f"Running {script_name}...")
     
     # Use subprocess.run and let stdout/stderr flow to the console
     cmd = [sys.executable, script_path]
+    if extra_args:
+        cmd.extend(extra_args)
     result = subprocess.run(cmd)
     
     if result.returncode != 0:
@@ -43,14 +45,34 @@ def main():
         run_script("am_stocks.py")
         run_script("am_etfs.py")
         run_script("am_short_interest.py")
+        run_script("get_snapshot.py")
         
     if run_what == 'news' or run_what == 'night_snapshot':
         if run_what == 'night_snapshot':
             run_script("get_snapshot.py")
         run_script("am_news.py")
+        run_script("sync_sheets.py")
         
     if run_what == 'snapshot':
         run_script("get_snapshot.py")
+
+    if run_what in ['sheets', 'sync_sheets', 'google_sheets']:
+        run_script("sync_sheets.py")
+
+    if run_what in ['announcements', 'corporate_announcements', 'steves_news', 'steves_buybacks']:
+        run_script(os.path.join("llm_parsing", "announcements_scanner.py"))
+
+    if run_what == 'buybacks':
+        run_script(os.path.join("llm_parsing", "buybacks_pipeline.py"))
+
+    if run_what == 'etf_parser':
+        run_script("etf_parser.py")
+
+    if run_what in ['order_logs', 'orders_logs', 'archive_orders', 'upload_order_logs']:
+        run_script("archive_logs.py", extra_args=["--orders_only"])
+
+    if run_what in ['archive', 'backup', 'upload_logs', 'gcs']:
+        run_script("archive_logs.py")
         
     if run_what == 'all':
         run_script("get_data.py")
@@ -58,6 +80,8 @@ def main():
         run_script("am_etfs.py")
         run_script("am_short_interest.py")
         run_script("am_news.py")
+        run_script(os.path.join("llm_parsing", "announcements_scanner.py"))
+        run_script("sync_sheets.py")
 
 if __name__ == "__main__":
     main()

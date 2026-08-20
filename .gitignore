@@ -1,5 +1,8 @@
 .env
 .venv
+__pycache__/
+*.pyc
 *.html
 *.csv
 !other_datasources/etf_list.csv
+

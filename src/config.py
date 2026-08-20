@@ -5,11 +5,15 @@ from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env'))
 
 POLYGON_KEY = os.environ.get('POLYGONKEY')
-OUT_DIR = os.environ.get('out_dir', '/tmp/polarstonks')
+GOOGLE_KEY = os.environ.get('GOOGLEKEY')
+SEARCH_ID = os.environ.get('SEARCHID')
+ZACKS_SEARCH_ID = os.environ.get('ZACKSSEARCHID')
+OUT_DIR = os.environ.get('out_dir', '/tmp/stonksanalysis')
+GCS_BUCKET = os.environ.get('GCS_BUCKET', 'stonksanalysisdatasets')
+IB_DIR = os.environ.get('IB_DIR', os.path.expanduser('~/ib_insync'))
 
 if not POLYGON_KEY:
-    # Fallback or error? For now, let's warn.
     print("Warning: POLYGONKEY environment variable not set.")
 
 if not os.path.exists(OUT_DIR):
-    os.makedirs(OUT_DIR)
+    os.makedirs(OUT_DIR, exist_ok=True)
