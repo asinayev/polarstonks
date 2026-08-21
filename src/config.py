@@ -10,7 +10,6 @@ SEARCH_ID = os.environ.get('SEARCHID')
 ZACKS_SEARCH_ID = os.environ.get('ZACKSSEARCHID')
 OUT_DIR = os.environ.get('out_dir', '/tmp/stonksanalysis')
 GCS_BUCKET = os.environ.get('GCS_BUCKET', 'stonksanalysisdatasets')
-IB_DIR = os.environ.get('IB_DIR', os.path.expanduser('~/ib_insync'))
 
 if not POLYGON_KEY:
     print("Warning: POLYGONKEY environment variable not set.")

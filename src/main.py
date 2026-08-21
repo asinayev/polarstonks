@@ -31,48 +31,67 @@ def run_script(script_name, extra_args=None):
 
 def main():
     parser = argparse.ArgumentParser(description="Polarstonks Dispatcher")
-    parser.add_argument("--run", dest="run_what", required=True, help="Task to run (am, news, etc)")
-    args = parser.parse_args()
+    parser.add_argument("--run", dest="run_what", required=True, help="Task to run (am, news, orders, close, etc)")
+    args, remaining_args = parser.parse_known_args()
     
     run_what = args.run_what
     
     if run_what in ['am', 'am_data', 'get_data']:
         # Fetch data
-        run_script("get_data.py")
+        run_script("get_data.py", extra_args=remaining_args)
         
     if run_what in ['am', 'am_out']:
         # Run strategies
-        run_script("am_stocks.py")
-        run_script("am_etfs.py")
-        run_script("am_short_interest.py")
-        run_script("get_snapshot.py")
+        run_script("am_stocks.py", extra_args=remaining_args)
+        run_script("am_etfs.py", extra_args=remaining_args)
+        run_script("am_short_interest.py", extra_args=remaining_args)
+        run_script("get_snapshot.py", extra_args=remaining_args)
         
     if run_what == 'news' or run_what == 'night_snapshot':
         if run_what == 'night_snapshot':
-            run_script("get_snapshot.py")
-        run_script("am_news.py")
-        run_script("sync_sheets.py")
+            run_script("get_snapshot.py", extra_args=remaining_args)
+        run_script("am_news.py", extra_args=remaining_args)
+        run_script("sync_sheets.py", extra_args=remaining_args)
         
     if run_what == 'snapshot':
-        run_script("get_snapshot.py")
+        run_script("get_snapshot.py", extra_args=remaining_args)
 
     if run_what in ['sheets', 'sync_sheets', 'google_sheets']:
-        run_script("sync_sheets.py")
+        run_script("sync_sheets.py", extra_args=remaining_args)
 
     if run_what in ['announcements', 'corporate_announcements', 'steves_news', 'steves_buybacks']:
-        run_script(os.path.join("llm_parsing", "announcements_scanner.py"))
+        run_script(os.path.join("llm_parsing", "announcements_scanner.py"), extra_args=remaining_args)
 
     if run_what == 'buybacks':
-        run_script(os.path.join("llm_parsing", "buybacks_pipeline.py"))
+        run_script(os.path.join("llm_parsing", "buybacks_pipeline.py"), extra_args=remaining_args)
 
     if run_what == 'etf_parser':
-        run_script("etf_parser.py")
+        run_script("etf_parser.py", extra_args=remaining_args)
+
+    # Execution & Order Management
+    if run_what in ['morning_orders', 'orders', 'buy_orders']:
+        run_script(os.path.join("execution", "morning_orders.py"), extra_args=remaining_args)
+
+    if run_what in ['morning_close', 'close', 'close_orders']:
+        run_script(os.path.join("execution", "morning_close.py"), extra_args=remaining_args)
+
+    if run_what in ['order_most_active', 'most_active']:
+        run_script(os.path.join("execution", "order_most_active.py"), extra_args=remaining_args)
+
+    if run_what in ['cancel_all_open', 'cancel_open', 'cancel_orders']:
+        run_script(os.path.join("execution", "cancel_all_open.py"), extra_args=remaining_args)
+
+    if run_what in ['check_assets', 'reconcile_assets']:
+        run_script(os.path.join("execution", "check_assets.py"), extra_args=remaining_args)
+
+    if run_what in ['view_trades', 'trades']:
+        run_script(os.path.join("execution", "view_trades.py"), extra_args=remaining_args)
 
     if run_what in ['order_logs', 'orders_logs', 'archive_orders', 'upload_order_logs']:
-        run_script("archive_logs.py", extra_args=["--orders_only"])
+        run_script("archive_logs.py", extra_args=["--orders_only"] + remaining_args)
 
     if run_what in ['archive', 'backup', 'upload_logs', 'gcs']:
-        run_script("archive_logs.py")
+        run_script("archive_logs.py", extra_args=remaining_args)
         
     if run_what == 'all':
         run_script("get_data.py")

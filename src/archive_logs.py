@@ -3,34 +3,26 @@
 import os
 import sys
 import datetime
-import subprocess
 import argparse
+from typing import Optional, List
 from google.cloud import storage
 
 # Add parent directory to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.config import OUT_DIR, GCS_BUCKET, IB_DIR
+from src.config import OUT_DIR, GCS_BUCKET
+from src.execution.view_trades import generate_trades_report
 
 
-def generate_trades(ib_dir: str = IB_DIR, out_dir: str = OUT_DIR, real: bool = True):
-    """Runs view_trades.py to produce trade_logs.json and am_trades.txt."""
-    script = os.path.join(ib_dir, "market_activity", "view_trades.py")
-    python_bin = os.path.join(ib_dir, ".venv", "bin", "python")
-    if not os.path.exists(python_bin):
-        python_bin = sys.executable
-
-    if not os.path.exists(script):
-        print(f"Warning: {script} not found, skipping trade log generation.")
-        return
-
+def generate_trades(out_dir: str = OUT_DIR, real: bool = True):
+    """Generates trade_logs.json and am_trades.txt using native IBKR execution."""
     for ftype, fname in [("json", "trade_logs.json"), ("txt", "am_trades.txt")]:
         out_path = os.path.join(out_dir, fname)
-        cmd = [python_bin, script, "--file_type", ftype, "--out_file", out_path]
-        if real:
-            cmd.append("--real")
         print(f"Generating {fname}...")
-        subprocess.run(cmd, cwd=ib_dir)
+        try:
+            generate_trades_report(real=real, file_type=ftype, out_file=out_path)
+        except Exception as e:
+            print(f"Warning: Failed to generate {fname}: {e}")
 
 
 def upload_to_gcs(out_dir: str = OUT_DIR, bucket_name: str = GCS_BUCKET, files: Optional[list] = None):
@@ -81,9 +73,8 @@ def main():
     parser = argparse.ArgumentParser(description="Generate trade logs and archive daily data to GCS.")
     parser.add_argument("--out_dir", default=OUT_DIR, help="Output directory")
     parser.add_argument("--bucket", default=GCS_BUCKET, help="GCS bucket name")
-    parser.add_argument("--ib_dir", default=IB_DIR, help="ib_insync repo directory")
     parser.add_argument("--orders_only", "--only_order_logs", dest="orders_only", action="store_true", help="Upload only order_logs.json")
-    parser.add_argument("--skip_trades", action="store_true", help="Skip running view_trades.py")
+    parser.add_argument("--skip_trades", action="store_true", help="Skip running trade logs generation")
     parser.add_argument("--paper", dest="real", action="store_false", help="Use paper trading for trade logs")
     args = parser.parse_args()
 
@@ -93,7 +84,7 @@ def main():
         return
 
     if not args.skip_trades:
-        generate_trades(ib_dir=args.ib_dir, out_dir=args.out_dir, real=args.real)
+        generate_trades(out_dir=args.out_dir, real=args.real)
 
     upload_to_gcs(out_dir=args.out_dir, bucket_name=args.bucket)
     print("Archive complete.")
