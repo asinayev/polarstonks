@@ -4,7 +4,7 @@ import sys
 
 # Add parent dir to path if needed for config
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from src.config import OUT_DIR
+from src.config import OUT_DIR, ensure_dir
 
 def format_strat(df, name, action="BUY", order_type="MKT", time_in_force="OPG", base_dir=OUT_DIR):
     """
@@ -34,9 +34,8 @@ def format_strat(df, name, action="BUY", order_type="MKT", time_in_force="OPG", 
 def write_strat(df, strat_name, base_dir=OUT_DIR, append=False, 
                 price_condition_min=False, price_condition_max=False):
     """Writes strategy output to CSV with standard filtering and cleaning."""
-    # Ensure directory exists
-    if not os.path.exists(base_dir):
-        os.makedirs(base_dir)
+    # Ensure directory exists with default ACL permissions
+    ensure_dir(base_dir)
 
     # Standard columns
     write_cols = ['symbol','action','order_type','strike_price','time_in_force']

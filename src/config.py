@@ -14,5 +14,12 @@ GCS_BUCKET = os.environ.get('GCS_BUCKET', 'stonksanalysisdatasets')
 if not POLYGON_KEY:
     print("Warning: POLYGONKEY environment variable not set.")
 
-if not os.path.exists(OUT_DIR):
-    os.makedirs(OUT_DIR, exist_ok=True)
+def ensure_dir(dir_path):
+    """Ensures target directory exists."""
+    if not dir_path:
+        return
+    os.makedirs(dir_path, exist_ok=True)
+
+ensure_dir(OUT_DIR)
+
+

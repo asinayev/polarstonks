@@ -81,6 +81,9 @@ def main():
     if run_what in ['cancel_all_open', 'cancel_open', 'cancel_orders']:
         run_script(os.path.join("execution", "cancel_all_open.py"), extra_args=remaining_args)
 
+    if run_what in ['open_orders', 'view_orders', 'list_orders', 'view_open']:
+        run_script(os.path.join("execution", "cancel_all_open.py"), extra_args=["--justprint"] + remaining_args)
+
     if run_what in ['check_assets', 'reconcile_assets']:
         run_script(os.path.join("execution", "check_assets.py"), extra_args=remaining_args)
 

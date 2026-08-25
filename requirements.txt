@@ -1,9 +1,11 @@
+ib_async
 polars
 polygon-api-client
 numpy
 pandas
 scipy
 requests
+google-cloud-storage
 google-genai
 pyarrow
 jupyter

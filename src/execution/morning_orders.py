@@ -42,13 +42,47 @@ def fetch_strategy_allocations(source: str) -> List[Tuple[str, float]]:
         with open(source, "r", encoding="utf-8") as f:
             lines = f.readlines()
 
-    reader = csv.reader(lines)
-    for row in reader:
-        if not row or len(row) < 2:
+    rows = [r for r in csv.reader(lines) if r]
+    if not rows:
+        return allocations
+
+    # First, try horizontal (matrix/table) format:
+    # Row 0 contains strategy headers across columns.
+    # Subsequent rows contain dates/labels in col 0 and amounts in cols 1..N.
+    header = [c.strip() for c in rows[0]]
+    horizontal_parsed = []
+    if len(header) > 2:
+        for row in reversed(rows[1:]):
+            if not row:
+                continue
+            parsed_row = []
+            for col_idx in range(1, min(len(header), len(row))):
+                strat_name = header[col_idx]
+                if not strat_name or strat_name.lower() in ("strategy", "name", "column 1", "date"):
+                    continue
+                cash_str = row[col_idx].strip().replace("$", "").replace(",", "")
+                if not cash_str:
+                    continue
+                try:
+                    cash = float(cash_str)
+                    if cash > 0:
+                        parsed_row.append((strat_name, cash))
+                except ValueError:
+                    continue
+            if parsed_row:
+                horizontal_parsed = parsed_row
+                break
+
+    if horizontal_parsed:
+        return horizontal_parsed
+
+    # Fallback to vertical format (row[0] = strategy, row[1] = cash)
+    for row in rows:
+        if len(row) < 2:
             continue
         strat_name = row[0].strip()
         cash_str = row[1].strip().replace("$", "").replace(",", "")
-        if not strat_name or strat_name.lower() in ("strategy", "name", "strategy name"):
+        if not strat_name or strat_name.lower() in ("strategy", "name", "strategy name", "column 1"):
             continue
         try:
             cash = float(cash_str)
@@ -56,6 +90,7 @@ def fetch_strategy_allocations(source: str) -> List[Tuple[str, float]]:
                 allocations.append((strat_name, cash))
         except ValueError:
             continue
+
     return allocations
 
 
