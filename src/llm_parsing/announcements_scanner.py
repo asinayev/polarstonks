@@ -196,12 +196,12 @@ Search result:
 
     # --- GUIDANCE ---
     guidance_desc = (
-        "improved guidance in the newProgram field. The announcement should say that guidance for an important "
-        "metric is now higher (better) than previously expected. If it's just a routine update or confirming "
-        "prior guidance, respond no."
+        "improved or raised guidance, outlook, or forecast in the newProgram field. The announcement should say that "
+        "guidance, outlook, or forecast for an important metric is now higher (better) than previously expected. "
+        "If it's just a routine update or confirming prior guidance, respond no."
     )
     guidance_params = {
-        "search_query": '"raises guidance"|"raises outlook"|"improves guidance"|"increases guidance"|"raises forecast"',
+        "search_query": "improve|improves|improved|improving|raise|raises|raised|raising|increase|increases|increased|increasing guidance|outlook|forecast",
         "prompt_template": prompt_template_base.format(guidance_desc),
         "min_close": 5,
         "min_volume": 20000,

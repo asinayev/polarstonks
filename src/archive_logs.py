@@ -76,7 +76,7 @@ def main():
     parser.add_argument("--orders_only", "--only_order_logs", dest="orders_only", action="store_true", help="Upload only order_logs.json")
     parser.add_argument("--skip_trades", action="store_true", help="Skip running trade logs generation")
     parser.add_argument("--paper", dest="real", action="store_false", help="Use paper trading for trade logs")
-    args = parser.parse_args()
+    args, _ = parser.parse_known_args()
 
     if args.orders_only:
         upload_order_logs(out_dir=args.out_dir, bucket_name=args.bucket)

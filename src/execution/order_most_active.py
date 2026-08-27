@@ -156,7 +156,7 @@ def main():
     parser.add_argument("--logfile", type=str, default=os.path.join(OUT_DIR, "order_logs.json"), help="Order log file")
     parser.add_argument("--dry-run", action="store_true", help="Preview trade without sending to IBKR")
 
-    args = parser.parse_args()
+    args, _ = parser.parse_known_args()
     run_order_most_active(args)
 
 

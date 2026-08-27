@@ -129,7 +129,7 @@ def main():
         nargs="*",
         help="Specific sheet names to download (e.g. manual guidance manual_sells)",
     )
-    args = parser.parse_args()
+    args, _ = parser.parse_known_args()
 
     results = sync_sheets(
         spreadsheet_id=args.spreadsheet_id,

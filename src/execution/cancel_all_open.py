@@ -75,7 +75,7 @@ def main():
         action="store_true",
         help="Only view/print open orders without canceling",
     )
-    args = parser.parse_args()
+    args, _ = parser.parse_known_args()
 
     cancel_all_open_orders(
         real=args.real,

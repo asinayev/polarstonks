@@ -129,7 +129,7 @@ def main():
     parser.add_argument("--file_type", type=str, choices=["txt", "json"], default="txt", help="Output format")
     parser.add_argument("--clientid", type=int, default=14, help="Client ID")
 
-    args = parser.parse_args()
+    args, _ = parser.parse_known_args()
     generate_trades_report(
         real=args.real,
         account=args.account,

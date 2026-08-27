@@ -177,7 +177,7 @@ def main():
     parser.add_argument("--close_types_url", type=str, default=DEFAULT_CLOSE_TYPES_URL, help="Close types Sheet URL")
     parser.add_argument("--dry-run", action="store_true", help="Preview closing orders without submitting")
 
-    args = parser.parse_args()
+    args, _ = parser.parse_known_args()
     execute_morning_close(args)
 
 

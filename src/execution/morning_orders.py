@@ -323,7 +323,7 @@ def main():
         help="Submit all strategy allocations without filtering by early/late stage.",
     )
 
-    args = parser.parse_args()
+    args, _ = parser.parse_known_args()
     execute_morning_orders(args)
 
 

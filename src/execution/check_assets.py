@@ -161,7 +161,7 @@ def main():
     parser.add_argument("--current_status_file", type=str, default=DEFAULT_CURRENT_STATUS_FILE, help="Path to current status file")
     parser.add_argument("--out_file", type=str, default=DEFAULT_OUT_FILE, help="Output file path")
 
-    args = parser.parse_args()
+    args, _ = parser.parse_known_args()
     check_assets(args)
 
 
