@@ -122,7 +122,7 @@ def build_close_order(
             account=account,
         )
 
-    # Case 3: Last High EOD (BUY for short)
+    # Case 3: Last High EOD (BUY for short) — Adaptive, time_condition first then price_condition
     elif closetype == "last_high_eod" and position_qty < 0:
         price_cond = PriceCondition(
             1, conjunction="a", isMore=True,
@@ -131,13 +131,15 @@ def build_close_order(
         return Order(
             action="BUY",
             orderType="MKT",
+            algoStrategy="Adaptive",
+            algoParams=[TagValue("adaptivePriority", "Patient")],
             totalQuantity=qty,
             tif="DAY",
-            conditions=[price_cond, time_condition],
+            conditions=[time_condition, price_cond],
             account=account,
         )
 
-    # Case 4: Last High EOD / Tru Rally (SELL for long)
+    # Case 4: Last High EOD / Tru Rally (SELL for long, liquid — illiquid handled in Case 2)
     elif limit_close_type and position_qty > 0:
         return Order(
             action="SELL",
@@ -148,11 +150,11 @@ def build_close_order(
             account=account,
         )
 
-    # Case 5: Low Close MOO / MKT EOD (SELL for long)
-    elif closetype in ("low_close_moo", "mkt_eod") and position_qty > 0:
+    # Case 5: MKT EOD — handles both long (SELL) and short (BUY)
+    elif closetype == "mkt_eod":
         if illiquid:
             return Order(
-                action="SELL",
+                action=action,
                 orderType="MKT",
                 algoStrategy="Adaptive",
                 algoParams=[TagValue("adaptivePriority", "Patient")],
@@ -163,10 +165,32 @@ def build_close_order(
             )
         else:
             return Order(
-                action="SELL",
+                action=action,
                 orderType="MOC",
                 totalQuantity=qty,
                 tif=None,
+                account=account,
+            )
+
+    # Case 6: Low Close MOO — handles both long (SELL) and short (BUY)
+    elif closetype == "low_close_moo":
+        if illiquid:
+            return Order(
+                action=action,
+                orderType="MKT",
+                algoStrategy="Adaptive",
+                algoParams=[TagValue("adaptivePriority", "Patient")],
+                totalQuantity=qty,
+                tif="DAY",
+                lmtPrice=lmt_price,
+                account=account,
+            )
+        else:
+            return Order(
+                action=action,
+                orderType="MKT",
+                totalQuantity=qty,
+                tif="OPG",
                 account=account,
             )
 

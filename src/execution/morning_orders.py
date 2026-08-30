@@ -12,7 +12,7 @@ from typing import Dict, List, Optional, Set, Tuple
 # Add parent directory
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from src.config import OUT_DIR, GCS_BUCKET
+from src.config import OUT_DIR, GCS_BUCKET, TRADING_ACCOUNT
 from src.archive_logs import upload_order_logs
 from src.execution.connection import initiate_ib, safe_disconnect
 from src.execution.trade_logger import log_trade
@@ -21,15 +21,15 @@ from src.execution.order_builder import (
     qualify_stock_contract,
     get_stock_price,
 )
-from ib_async import Order, Stock
+from ib_async import Order, Stock, TagValue
 
 DEFAULT_SHEET_URL = "https://docs.google.com/spreadsheets/d/1bSW8k45QPlnL1aIijoRvRdZYhfKvHoz_TCWVGAZdGaE/edit?gid=1955878182#gid=1955878182"
 DEFAULT_CSV_DIR = OUT_DIR
+DEFAULT_TRADING_ACCOUNT = TRADING_ACCOUNT
 DEFAULT_LOG_FILE = os.path.join(OUT_DIR, "order_logs.json")
 DEFAULT_SPY_FILE = os.path.join(OUT_DIR, "spy_change.csv")
 DEFAULT_ASSETS_FILE = os.path.join(OUT_DIR, "assets_held.csv")
 DEFAULT_STATUS_LIST = os.path.join(OUT_DIR, "allow_list.csv")
-
 
 def fetch_strategy_allocations(source: str) -> List[Tuple[str, float]]:
     allocations = []
@@ -161,6 +161,12 @@ def place_order(
     if not contract:
         return
 
+    # Read order parameters from the CSV row (same format as placeorder_fromcsv.py)
+    action = row.get("action", "BUY").strip().upper() or "BUY"
+    order_type = row.get("order_type", "MKT").strip() or "MKT"
+    time_in_force = row.get("time_in_force", "DAY").strip() or "DAY"
+
+    # Fetch live market price
     price = get_stock_price(contract, row, ib)
     if math.isnan(price) or price <= 0:
         print(f"Could not retrieve price for {symbol}. Skipping.")
@@ -170,20 +176,61 @@ def place_order(
         print(f"Skipping {symbol}: Price ${price:.2f} < minprice ${args.minprice:.2f}")
         return
 
-    quantity = round(cash / price)
+    # Determine strike/limit price from row, falling back to live price
+    strike_price_str = row.get("strike_price", "").strip()
+    try:
+        strike_price = float(strike_price_str) if strike_price_str else price
+    except ValueError:
+        strike_price = price
+
+    quantity = round(cash / strike_price)
     if quantity <= 0:
-        print(f"Skipping {symbol}: Computed quantity is 0 (price=${price:.2f}, cash=${cash:,.2f})")
+        print(f"Skipping {symbol}: Computed quantity is 0 (price=${strike_price:.2f}, cash=${cash:,.2f})")
         return
 
-    order = Order(
-        action="BUY",
-        orderType="MOC",
-        totalQuantity=quantity,
-        tif=None,
-        account=args.account,
-    )
+    # Map order type the same way placeorder_fromcsv.py does:
+    # MKT + tif=close -> MOC; LMT + tif=close -> LOC
+    if time_in_force.lower() == "close" and order_type in ("MKT", "LMT"):
+        effective_order_type = {"MKT": "MOC", "LMT": "LOC"}[order_type]
+        effective_tif = None
+    else:
+        effective_order_type = order_type
+        effective_tif = time_in_force
 
-    print(f"Placing MOC BUY: {quantity} shares of {symbol} @ ~${price:.2f} (Total: ${quantity * price:,.2f})")
+    # Compute limit price: strike_price for LMT/LOC, live ±10% for MKT/Adaptive
+    if order_type == "LMT" or effective_order_type == "LOC":
+        lmt_price = round(strike_price, 2)
+    elif action == "BUY":
+        lmt_price = round(price * 1.1, 2)
+    else:
+        lmt_price = round(price * 0.9, 2)
+
+    # Build the order
+    if order_type == "Adaptive":
+        order = Order(
+            action=action,
+            orderType="MKT",
+            algoStrategy="Adaptive",
+            algoParams=[TagValue("adaptivePriority", "Patient")],
+            totalQuantity=quantity,
+            tif="DAY",
+            lmtPrice=lmt_price,
+            account=args.account,
+        )
+    else:
+        order = Order(
+            action=action,
+            orderType=effective_order_type,
+            totalQuantity=quantity,
+            tif=effective_tif,
+            lmtPrice=lmt_price,
+            account=args.account,
+        )
+
+    print(
+        f"Placing {order.orderType} {action}: {quantity} shares of {symbol}"
+        f" @ ~${strike_price:.2f} (lmt=${lmt_price:.2f}, Total: ${quantity * strike_price:,.2f})"
+    )
     trade = ib.placeOrder(contract, order)
 
     try:
@@ -301,7 +348,7 @@ def main():
     parser.add_argument("--assets_file", type=str, default=DEFAULT_ASSETS_FILE, help="Path to held assets CSV")
     parser.add_argument("--real", action="store_true", default=True, help="Use real account port")
     parser.add_argument("--paper", dest="real", action="store_false", help="Use paper account port")
-    parser.add_argument("--account", type=str, required=False, help="IBKR Account number")
+    parser.add_argument("--account", type=str, default=DEFAULT_TRADING_ACCOUNT, required=False, help="IBKR Account number")
     parser.add_argument("--clientid", type=int, default=14, help="Client ID")
     parser.add_argument("--minprice", type=float, default=6.0, help="Minimum stock price allowed")
     parser.add_argument("--minspymove", type=float, required=False, help="Min SPY move threshold")

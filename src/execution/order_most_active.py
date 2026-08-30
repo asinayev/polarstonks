@@ -10,7 +10,7 @@ from typing import Optional
 # Add parent directory
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from src.config import OUT_DIR, GCS_BUCKET
+from src.config import OUT_DIR, GCS_BUCKET, TRADING_ACCOUNT
 from src.archive_logs import upload_order_logs
 from src.execution.connection import initiate_ib, safe_disconnect
 from src.execution.trade_logger import log_trade
@@ -147,7 +147,7 @@ def main():
     parser.add_argument("--minprice", type=float, default=6.0, help="Minimum stock price allowed")
     parser.add_argument("--real", action="store_true", default=True, help="Use real account")
     parser.add_argument("--paper", dest="real", action="store_false", help="Use paper account")
-    parser.add_argument("--account", type=str, required=False, help="IBKR account number")
+    parser.add_argument("--account", type=str, default=TRADING_ACCOUNT, required=False, help="IBKR account number")
     parser.add_argument("--clientid", type=int, default=14, help="Client ID")
     parser.add_argument("--minspymove", type=float, required=False, help="Minimum SPY move threshold")
     parser.add_argument("--maxspymove", type=float, required=False, help="Maximum SPY move threshold")

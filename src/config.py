@@ -8,6 +8,7 @@ POLYGON_KEY = os.environ.get('POLYGONKEY')
 GOOGLE_KEY = os.environ.get('GOOGLEKEY')
 SEARCH_ID = os.environ.get('SEARCHID')
 ZACKS_SEARCH_ID = os.environ.get('ZACKSSEARCHID')
+TRADING_ACCOUNT = os.environ.get('TRADING_ACCOUNT')
 OUT_DIR = os.environ.get('out_dir', '/tmp/stonksanalysis')
 GCS_BUCKET = os.environ.get('GCS_BUCKET', 'stonksanalysisdatasets')
 

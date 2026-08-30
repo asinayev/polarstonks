@@ -10,7 +10,7 @@ from typing import Dict, List, Optional, Set, Tuple
 # Add parent directory
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from src.config import OUT_DIR, GCS_BUCKET
+from src.config import OUT_DIR, GCS_BUCKET, TRADING_ACCOUNT
 from src.archive_logs import upload_order_logs
 from src.execution.connection import initiate_ib, safe_disconnect
 from src.execution.trade_logger import log_trade
@@ -90,26 +90,71 @@ def execute_morning_close(args):
             positions_list = [p for p in positions_list if p.account == args.account]
         current_positions = {p.contract.symbol.upper(): p.position for p in positions_list if p.position != 0}
 
+        # Build set of symbols that already have an active open order (avoid duplicates)
+        open_trades_symbols = {
+            t.contract.symbol.upper() for t in ib.openTrades()
+            if not args.account or t.order.account == args.account
+        }
+
         def close_symbol(symbol: str, closetype: str, illiquid: bool, strat_ref: str):
             nonlocal orders_placed
             pos_qty = current_positions.get(symbol, 0)
             if pos_qty == 0:
                 return
 
+            # Skip if there's already an active order for this symbol
+            if symbol in open_trades_symbols:
+                print(f"Skipping {symbol} - there is already an active trade in progress.")
+                return
+
+            # Require current_status data for all non-permanent close types
+            stat_row = current_status.get(symbol, {})
+            if closetype != "permanent" and not stat_row:
+                print(f"Stock {symbol} does not have current data in status file. CLOSE MANUALLY")
+                return
+
             contract = qualify_stock_contract(symbol, ib)
             if not contract:
                 return
 
+            # Compute limit price based on close type
             lmt_price = None
-            if closetype in ("last_high_eod", "tru_rally"):
-                stat_row = current_status.get(symbol, {})
-                for col in ("high", "high_price", "close", "last"):
-                    if stat_row.get(col):
-                        try:
-                            lmt_price = float(stat_row[col])
-                            break
-                        except ValueError:
-                            pass
+            if stat_row:
+                try:
+                    close_price = float(stat_row.get("close", 0) or 0)
+                    high_price = float(stat_row.get("high", 0) or 0)
+                    low_price = float(stat_row.get("low", 0) or 0)
+                    open_price = float(stat_row.get("open", 0) or 0)
+                except (ValueError, TypeError):
+                    close_price = high_price = low_price = open_price = 0
+
+                if closetype == "last_high_eod":
+                    lmt_price = round(high_price, 2) if high_price else None
+
+                elif closetype == "tru_rally":
+                    # Reference formula: close + high - low
+                    if close_price and high_price and low_price:
+                        lmt_price = round(close_price + high_price - low_price, 2)
+
+                elif closetype == "low_close_moo":
+                    # Check entry conditions before proceeding
+                    if pos_qty < 0:  # short position — BUY to cover
+                        low_close_short_cond = (
+                            high_price > low_price and
+                            close_price < (low_price + 0.2 * (high_price - low_price))
+                        )
+                        if not low_close_short_cond:
+                            print(f"Stock {symbol} did not meet low_close_moo (short) conditions. Skipping.")
+                            return
+                        lmt_price = round(high_price * 1.1, 2) if high_price else None
+                    else:  # long position — SELL
+                        low_close_long_cond = (
+                            open_price > 0 and close_price < open_price * 0.875
+                        )
+                        if not low_close_long_cond:
+                            print(f"Stock {symbol} did not meet low_close_moo (long) conditions. Skipping.")
+                            return
+                        lmt_price = round(low_price * 0.8, 2) if low_price else None
 
             order = build_close_order(
                 account=args.account,
@@ -166,7 +211,7 @@ def main():
     parser = argparse.ArgumentParser(description="Automate closing orders via IBKR.")
     parser.add_argument("--real", action="store_true", default=True, help="Use real account")
     parser.add_argument("--paper", dest="real", action="store_false", help="Use paper account")
-    parser.add_argument("--account", type=str, required=False, help="IBKR Account number")
+    parser.add_argument("--account", type=str, default=TRADING_ACCOUNT, required=False, help="IBKR Account number")
     parser.add_argument("--clientid", type=int, default=14, help="Client ID")
     parser.add_argument("--csv_dir", type=str, default=DEFAULT_CSV_DIR, help="Directory with strategy CSVs")
     parser.add_argument("--currentstatusfile", type=str, default=DEFAULT_CURRENT_STATUS_FILE, help="Current prices CSV")

@@ -33,7 +33,7 @@ def cancel_all_open_orders(
                 return
 
             print(f"Found {len(trades)} open order(s):\n")
-            print(f"{OrderId:<10} {Action:<6} {Qty:<8} {Symbol:<8} {Type:<6} {LmtPrice:<10} {Status:<14} {TIF:<6} {Account}")
+            #print(f"{OrderId:<10} {Action:<6} {Qty:<8} {Symbol:<8} {Type:<6} {LmtPrice:<10} {Status:<14} {TIF:<6} {Account}")
             print("-" * 80)
             for t in trades:
                 order = t.order
