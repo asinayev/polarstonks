@@ -33,7 +33,7 @@ def log_trade(
     price_paid = sum([f.execution.price * f.execution.shares for f in trade.fills]) / quantity if traded and quantity > 0 else 0
 
     to_log = {
-        "symbol": trade.contract.localSymbol,
+        "symbol": trade.contract.localSymbol or trade.contract.symbol,
         "date": str(datetime.datetime.now().date()),
         "order_id": order_id,
         "action": trade.order.action,

@@ -170,7 +170,7 @@ def execute_morning_close(args):
                 trade = ib.placeOrder(contract, order)
                 orders_placed += 1
                 try:
-                    log_trade(trade, strat_ref, args.logfile, {}, ib)
+                    log_trade(trade, strat_ref, args.logfile, {"close": 1}, ib)
                 except Exception as e:
                     print(f"Failed to log trade: {e}")
 
