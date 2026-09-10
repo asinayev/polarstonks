@@ -84,13 +84,14 @@ def run_announcement_search(
                 else:
                     enriched = res
 
-                all_matches.append(enriched)
-                ticker = enriched.get("ticker", "UNKNOWN")
-                company = enriched.get("companyName", "Unknown Company")
-                dt = enriched.get("timePublished", "Unknown Date")
-                quote = enriched.get("quote", "")
-                link = enriched.get("link", "")
-                logger.info(f"MATCH FOUND: [{ticker}] {company} ({dt}) - Quote: '{quote}' | Link: {link}")
+                if enriched.get("match"):
+                    all_matches.append(enriched)
+                    ticker = enriched.get("ticker", "UNKNOWN")
+                    company = enriched.get("companyName", "Unknown Company")
+                    dt = enriched.get("timePublished", "Unknown Date")
+                    quote = enriched.get("quote", "")
+                    link = enriched.get("link", "")
+                    logger.info(f"MATCH FOUND: [{ticker}] {company} ({dt}) - Quote: '{quote}' | Link: {link}")
 
     if f and all_matches:
         write_matches_to_file(all_matches, f)
@@ -214,7 +215,6 @@ Search result:
     os.makedirs(output_dir, exist_ok=True)
 
     summary_path = os.path.join(output_dir, "steves_news.txt")
-    announcements_path = os.path.join(output_dir, "corporate_announcements.txt")
 
     import io
     report_buffer = io.StringIO()
@@ -257,22 +257,21 @@ Search result:
 
     final_report = report_buffer.getvalue()
 
-    for path in [summary_path, announcements_path]:
+    try:
+        with open(summary_path, "w") as f:
+            f.write(final_report)
+        logger.info(f"Summary saved to {summary_path}")
+    except PermissionError:
+        fallback = f"/tmp/{os.path.basename(summary_path)}"
+        logger.warning(f"Permission denied writing to {summary_path} (likely owned by root from Docker). Writing to fallback {fallback} instead.")
         try:
-            with open(path, "w") as f:
+            with open(fallback, "w") as f:
                 f.write(final_report)
-            logger.info(f"Summary saved to {path}")
-        except PermissionError:
-            fallback = f"/tmp/{os.path.basename(path)}"
-            logger.warning(f"Permission denied writing to {path} (likely owned by root from Docker). Writing to fallback {fallback} instead.")
-            try:
-                with open(fallback, "w") as f:
-                    f.write(final_report)
-                logger.info(f"Summary saved to fallback {fallback}")
-            except Exception as e:
-                logger.error(f"Failed to write fallback to {fallback}: {e}")
+            logger.info(f"Summary saved to fallback {fallback}")
         except Exception as e:
-            logger.error(f"Error writing to {path}: {e}")
+            logger.error(f"Failed to write fallback to {fallback}: {e}")
+    except Exception as e:
+        logger.error(f"Error writing to {summary_path}: {e}")
 
     print(final_report)
 

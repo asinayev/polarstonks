@@ -31,6 +31,18 @@ def fetch_article(url: str) -> Optional[str]:
         response.raise_for_status()
         raw_html = response.text
 
+        # Shorten HTML roughly to exclude footers and trailing related articles section (typically 3 related articles at bottom)
+        related_match = re.search(
+            r"<(div|section|aside)[^>]*(related|recommended|more-news|more-releases|more-stories)[^>]*>",
+            raw_html,
+            flags=re.IGNORECASE,
+        )
+        if related_match and related_match.start() > len(raw_html) * 0.3:
+            raw_html = raw_html[: related_match.start()]
+        else:
+            # Roughly cut off the bottom third of the HTML where related articles/footers reside
+            raw_html = raw_html[: int(len(raw_html) * 0.65)]
+
         # 1. Remove JavaScript and CSS
         clean_html = re.sub(
             r"<(script|style|head|title|noscript)[^>]*>.*?</\1>",
@@ -48,8 +60,15 @@ def fetch_article(url: str) -> Optional[str]:
         # 4. Unescape HTML entities (e.g., "&amp;" -> "&", "&nbsp;" -> " ")
         text_only = html.unescape(text_only)
 
-        # 5. Remove last quarter of the text as it usually contains footers / links to other articles
-        cutoff_index = int(len(text_only) * 0.75)
+        # 5. Remove any text-level related article markers
+        text_match = re.search(
+            r"(?i)\n\s*(related\s+(articles?|news|stories|releases|press\s+releases?)|more\s+(articles?|stories|news)|recommended\s+stories)",
+            text_only,
+        )
+        if text_match and text_match.start() > len(text_only) * 0.3:
+            text_only = text_only[: text_match.start()]
+
+        cutoff_index = int(len(text_only) * 0.70)
         text_only = text_only[:cutoff_index]
         return text_only
     except Exception as e:

@@ -32,6 +32,7 @@ DEFAULT_AUTO_ASSETS_FILE = os.path.join(OUT_DIR, "assets_held_auto.csv")
 
 
 def load_close_types(source: str) -> Dict[str, str]:
+    """Loads mapping of strategy name to close strategy type (e.g. mkt_eod, last_high_eod)."""
     close_types = {}
     if source.startswith(("http://", "https://")):
         csv_url = convert_to_export_url(source)
@@ -49,13 +50,16 @@ def load_close_types(source: str) -> Dict[str, str]:
         if not row or len(row) < 2:
             continue
         strat = row[0].strip()
-        ctype = row[1].strip()
-        if strat and ctype and strat.lower() not in ("strategy", "name"):
+        ctype = row[2].strip().lower() if len(row) > 2 else row[1].strip().lower()
+        if strat and ctype and strat.lower() not in ("strategy", "name", "column 1", "close_type"):
             close_types[strat] = ctype
+            close_types[strat.lower()] = ctype
+            close_types[strat.upper()] = ctype
     return close_types
 
 
 def load_current_status(current_status_file: str) -> Dict[str, Dict[str, str]]:
+    """Loads latest market snapshot / price status by symbol."""
     status_dict = {}
     if not os.path.exists(current_status_file):
         return status_dict
@@ -70,12 +74,43 @@ def load_current_status(current_status_file: str) -> Dict[str, Dict[str, str]]:
     return status_dict
 
 
+def determine_liquidity(
+    symbol: str,
+    row: Optional[Dict[str, str]],
+    current_status: Dict[str, Dict[str, str]],
+) -> bool:
+    """
+    Determines if a stock is illiquid.
+    1. If row explicitly contains 'liquid', uses that ('0' -> illiquid, '1' -> liquid).
+    2. Otherwise attempts auto-detect from current_status volume (> 150k -> liquid, <= 150k -> illiquid).
+    3. Falls back to liquid (illiquid=False).
+    """
+    if row and "liquid" in row and row["liquid"] is not None:
+        liquid_val = str(row["liquid"]).strip()
+        if liquid_val == "0":
+            return True
+        elif liquid_val == "1":
+            return False
+
+    if symbol in current_status:
+        try:
+            vol = float(current_status[symbol].get("volume", 0) or 0)
+            if vol > 0:
+                return vol <= 150000
+        except (ValueError, TypeError):
+            pass
+
+    return False
+
+
 def execute_morning_close(args):
     print("Starting Morning Close Routine...")
     allocations = fetch_strategy_allocations(args.sheet_url)
     close_types = load_close_types(args.close_types_url)
     current_status = load_current_status(args.currentstatusfile)
     permanent_assets = load_permanent_assets(args.assets_file)
+    if os.path.exists(args.auto_assets_file):
+        permanent_assets.update(load_permanent_assets(args.auto_assets_file))
 
     if args.dry_run:
         print(f"[DRY RUN] Morning close would process {len(allocations)} strategies.")
@@ -96,10 +131,19 @@ def execute_morning_close(args):
             if not args.account or t.order.account == args.account
         }
 
-        def close_symbol(symbol: str, closetype: str, illiquid: bool, strat_ref: str):
+        def close_symbol(
+            symbol: str,
+            closetype: str,
+            row: Optional[Dict[str, str]],
+            strat_ref: str,
+        ):
             nonlocal orders_placed
             pos_qty = current_positions.get(symbol, 0)
             if pos_qty == 0:
+                return
+
+            if symbol in permanent_assets or closetype == "permanent":
+                print(f"Skipping permanent held asset: {symbol}")
                 return
 
             # Skip if there's already an active order for this symbol
@@ -107,18 +151,22 @@ def execute_morning_close(args):
                 print(f"Skipping {symbol} - there is already an active trade in progress.")
                 return
 
-            # Require current_status data for all non-permanent close types
+            illiquid = determine_liquidity(symbol, row, current_status)
+
+            # Require current_status data for price-dependent close types
             stat_row = current_status.get(symbol, {})
-            if closetype != "permanent" and not stat_row:
-                print(f"Stock {symbol} does not have current data in status file. CLOSE MANUALLY")
+            if closetype not in ("mkt_eod",) and not stat_row:
+                print(f"Stock {symbol} does not have current data in status file for {closetype}. CLOSE MANUALLY")
                 return
 
             contract = qualify_stock_contract(symbol, ib)
             if not contract:
                 return
 
-            # Compute limit price based on close type
             lmt_price = None
+
+            # Compute limit price / conditions based on price metrics
+            close_price = high_price = low_price = open_price = 0.0
             if stat_row:
                 try:
                     close_price = float(stat_row.get("close", 0) or 0)
@@ -126,35 +174,41 @@ def execute_morning_close(args):
                     low_price = float(stat_row.get("low", 0) or 0)
                     open_price = float(stat_row.get("open", 0) or 0)
                 except (ValueError, TypeError):
-                    close_price = high_price = low_price = open_price = 0
+                    close_price = high_price = low_price = open_price = 0.0
 
-                if closetype == "last_high_eod":
-                    lmt_price = round(high_price, 2) if high_price else None
+            if closetype == "mkt_eod":
+                print(f"Closing stock {symbol} at Market on Close (mkt_eod, illiquid={illiquid})")
+                lmt_price = None
 
-                elif closetype == "tru_rally":
-                    # Reference formula: close + high - low
-                    if close_price and high_price and low_price:
-                        lmt_price = round(close_price + high_price - low_price, 2)
+            elif closetype == "last_high_eod":
+                lmt_price = round(high_price, 2) if high_price else None
+                print(f"Closing stock {symbol} at previous high: {lmt_price} (illiquid={illiquid})")
 
-                elif closetype == "low_close_moo":
-                    # Check entry conditions before proceeding
-                    if pos_qty < 0:  # short position — BUY to cover
-                        low_close_short_cond = (
-                            high_price > low_price and
-                            close_price < (low_price + 0.2 * (high_price - low_price))
-                        )
-                        if not low_close_short_cond:
-                            print(f"Stock {symbol} did not meet low_close_moo (short) conditions. Skipping.")
-                            return
-                        lmt_price = round(high_price * 1.1, 2) if high_price else None
-                    else:  # long position — SELL
-                        low_close_long_cond = (
-                            open_price > 0 and close_price < open_price * 0.875
-                        )
-                        if not low_close_long_cond:
-                            print(f"Stock {symbol} did not meet low_close_moo (long) conditions. Skipping.")
-                            return
-                        lmt_price = round(low_price * 0.8, 2) if low_price else None
+            elif closetype == "tru_rally":
+                if close_price and high_price and low_price:
+                    lmt_price = round(close_price + high_price - low_price, 2)
+                print(f"Closing stock {symbol} at true rally price: {lmt_price} (illiquid={illiquid})")
+
+            elif closetype == "low_close_moo":
+                if pos_qty < 0:  # short position — BUY to cover
+                    low_close_short_cond = (
+                        high_price > low_price and
+                        close_price < (low_price + 0.2 * (high_price - low_price))
+                    )
+                    if not low_close_short_cond:
+                        print(f"Stock {symbol} did not meet low_close_moo (short) conditions. Skipping.")
+                        return
+                    lmt_price = round(high_price * 1.1, 2) if high_price else None
+                    print(f"Closing short stock {symbol} at open after day drop")
+                else:  # long position — SELL
+                    low_close_long_cond = (
+                        open_price > 0 and close_price < open_price * 0.875
+                    )
+                    if not low_close_long_cond:
+                        print(f"Stock {symbol} did not meet low_close_moo (long) conditions. Skipping.")
+                        return
+                    lmt_price = round(low_price * 0.8, 2) if low_price else None
+                    print(f"Closing long stock {symbol} at open after day drop")
 
             order = build_close_order(
                 account=args.account,
@@ -166,34 +220,37 @@ def execute_morning_close(args):
             )
 
             if order:
-                print(f"Placing close order: {order.action} {order.totalQuantity} {symbol} ({closetype})")
+                print(f"Placing close order: {order.action} {order.totalQuantity} {symbol} ({closetype}, illiquid={illiquid})")
                 trade = ib.placeOrder(contract, order)
                 orders_placed += 1
+                open_trades_symbols.add(contract.symbol.upper())
                 try:
                     log_trade(trade, strat_ref, args.logfile, {"close": 1}, ib)
                 except Exception as e:
                     print(f"Failed to log trade: {e}")
 
-        # Process morning strategies
+        # 1. Process all morning strategies derived through allocations
         for strat_name, _ in allocations:
-            ctype = close_types.get(strat_name, "last_high_eod")
+            ctype = close_types.get(strat_name) or close_types.get(strat_name.lower(), "last_high_eod")
             strat_file = os.path.join(args.csv_dir, f"{strat_name}.csv")
             if not os.path.exists(strat_file):
+                print(f"File for strategy {strat_name} not found ({strat_file})")
                 continue
             with open(strat_file, "r", encoding="utf-8") as f:
                 for row in csv.DictReader(f):
                     sym = row.get("symbol", "").strip().upper()
-                    if sym and sym not in permanent_assets:
-                        close_symbol(sym, ctype, False, strat_file)
+                    if sym:
+                        print(f"Attempting closing {sym} for strategy {strat_name} (type: {ctype})")
+                        close_symbol(sym, ctype, row, strat_file)
 
-        # Process auto assets held
+        # 2. Process assets_held_auto.csv for any remaining open positions
         if os.path.exists(args.auto_assets_file):
             with open(args.auto_assets_file, "r", encoding="utf-8") as f:
                 for row in csv.DictReader(f):
                     sym = row.get("symbol", "").strip().upper()
                     ctype = row.get("close_type", "last_high_eod").strip().lower()
-                    if sym and ctype != "permanent":
-                        close_symbol(sym, ctype, row.get("liquid", "1").strip() == "0", args.auto_assets_file)
+                    if sym:
+                        close_symbol(sym, ctype, row, args.auto_assets_file)
 
         print(f"\n>>> Morning close complete. Total close orders placed: {orders_placed}")
 
@@ -228,3 +285,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+

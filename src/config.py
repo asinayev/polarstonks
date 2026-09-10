@@ -11,6 +11,7 @@ ZACKS_SEARCH_ID = os.environ.get('ZACKSSEARCHID')
 TRADING_ACCOUNT = os.environ.get('TRADING_ACCOUNT')
 OUT_DIR = os.environ.get('out_dir', '/tmp/stonksanalysis')
 GCS_BUCKET = os.environ.get('GCS_BUCKET', 'stonksanalysisdatasets')
+MIN_PRICE = float(os.environ.get('min_price', 6.0))
 
 if not POLYGON_KEY:
     print("Warning: POLYGONKEY environment variable not set.")

@@ -7,12 +7,13 @@ import io
 import math
 import argparse
 import urllib.request
-from typing import Dict, List, Optional, Set, Tuple
+from datetime import datetime
+from typing import Dict, List, Optional, Any, Set, Tuple
 
 # Add parent directory
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from src.config import OUT_DIR, GCS_BUCKET, TRADING_ACCOUNT
+from src.config import OUT_DIR, GCS_BUCKET, TRADING_ACCOUNT, MIN_PRICE
 from src.archive_logs import upload_order_logs
 from src.execution.connection import initiate_ib, safe_disconnect
 from src.execution.trade_logger import log_trade
@@ -21,7 +22,7 @@ from src.execution.order_builder import (
     qualify_stock_contract,
     get_stock_price,
 )
-from ib_async import Order, Stock, TagValue
+from ib_async import Order, Stock, TagValue, TimeCondition, PriceCondition
 
 DEFAULT_SHEET_URL = "https://docs.google.com/spreadsheets/d/1bSW8k45QPlnL1aIijoRvRdZYhfKvHoz_TCWVGAZdGaE/edit?gid=1955878182#gid=1955878182"
 DEFAULT_CSV_DIR = OUT_DIR
@@ -30,6 +31,7 @@ DEFAULT_LOG_FILE = os.path.join(OUT_DIR, "order_logs.json")
 DEFAULT_SPY_FILE = os.path.join(OUT_DIR, "spy_change.csv")
 DEFAULT_ASSETS_FILE = os.path.join(OUT_DIR, "assets_held.csv")
 DEFAULT_STATUS_LIST = os.path.join(OUT_DIR, "allow_list.csv")
+DEFAULT_MIN_PRICE = MIN_PRICE
 
 def fetch_strategy_allocations(source: str) -> List[Tuple[str, float]]:
     allocations = []
@@ -142,6 +144,20 @@ def load_permanent_assets(assets_file_path: str) -> Set[str]:
     return permanent
 
 
+def _parse_condition_price(val: Optional[Any]) -> Optional[float]:
+    """Safely parses float price conditions, returning None for empty or invalid values."""
+    if val is None:
+        return None
+    val_str = str(val).strip()
+    if not val_str or val_str.lower() in ("nan", "none", "null"):
+        return None
+    try:
+        p = float(val_str)
+        return p if not math.isnan(p) and p > 0 else None
+    except ValueError:
+        return None
+
+
 def place_order(
     row: Dict[str, str],
     ib,
@@ -172,21 +188,24 @@ def place_order(
         print(f"Could not retrieve price for {symbol}. Skipping.")
         return
 
-    if price < args.minprice:
-        print(f"Skipping {symbol}: Price ${price:.2f} < minprice ${args.minprice:.2f}")
+    quantity = round(cash / price)
+    if quantity <= 0:
+        print(f"Skipping {symbol}: Computed quantity is 0 (price=${price:.2f}, cash=${cash:,.2f})")
         return
 
-    # Determine strike/limit price from row, falling back to live price
+    # Check lower and upper safety bounds from placeorder_fromcsv.py:
+    # row['strike_price'] > args.minprice and row['strike_price'] * row['quantity'] < args.cash * 1.5
+    min_price_threshold = getattr(args, "minprice", 6.0)
+    if not (price > min_price_threshold and price * quantity < cash * 1.5):
+        print(f"Skipping because price {price} is too low or trying to order too much: {symbol}")
+        return
+
+    # Determine strike/limit price for LMT / LOC from row, falling back to live price
     strike_price_str = row.get("strike_price", "").strip()
     try:
         strike_price = float(strike_price_str) if strike_price_str else price
     except ValueError:
         strike_price = price
-
-    quantity = round(cash / strike_price)
-    if quantity <= 0:
-        print(f"Skipping {symbol}: Computed quantity is 0 (price=${strike_price:.2f}, cash=${cash:,.2f})")
-        return
 
     # Map order type the same way placeorder_fromcsv.py does:
     # MKT + tif=close -> MOC; LMT + tif=close -> LOC
@@ -205,6 +224,42 @@ def place_order(
     else:
         lmt_price = round(price * 0.9, 2)
 
+    # Lower and upper limits of stock price (price_condition_min / price_condition_max)
+    price_min = _parse_condition_price(row.get("price_condition_min"))
+    price_max = _parse_condition_price(row.get("price_condition_max"))
+    conditions = []
+    if price_min is not None or price_max is not None:
+        today_str = datetime.today().strftime("%Y%m%d")
+        conditions.append(
+            TimeCondition(
+                isMore=False,
+                time=f"{today_str} 09:35:00 US/Eastern",
+                conjunction="a",
+            )
+        )
+        if price_min is not None:
+            conditions.append(
+                PriceCondition(
+                    1,
+                    conjunction="a",
+                    isMore=True,
+                    price=price_min,
+                    exch="SMART",
+                    conId=contract.conId if contract and contract.conId else 0,
+                )
+            )
+        if price_max is not None:
+            conditions.append(
+                PriceCondition(
+                    1,
+                    conjunction="a",
+                    isMore=False,
+                    price=price_max,
+                    exch="SMART",
+                    conId=contract.conId if contract and contract.conId else 0,
+                )
+            )
+
     # Build the order
     if order_type == "Adaptive":
         order = Order(
@@ -216,6 +271,7 @@ def place_order(
             tif="DAY",
             lmtPrice=lmt_price,
             account=args.account,
+            conditions=conditions,
         )
     else:
         order = Order(
@@ -225,12 +281,10 @@ def place_order(
             tif=effective_tif,
             lmtPrice=lmt_price,
             account=args.account,
+            conditions=conditions,
         )
 
-    print(
-        f"Placing {order.orderType} {action}: {quantity} shares of {symbol}"
-        f" @ ~${strike_price:.2f} (lmt=${lmt_price:.2f}, Total: ${quantity * strike_price:,.2f})"
-    )
+    print(f"Sending {order_type} order at {price}: {symbol}")
     trade = ib.placeOrder(contract, order)
 
     try:
@@ -350,7 +404,7 @@ def main():
     parser.add_argument("--paper", dest="real", action="store_false", help="Use paper account port")
     parser.add_argument("--account", type=str, default=DEFAULT_TRADING_ACCOUNT, required=False, help="IBKR Account number")
     parser.add_argument("--clientid", type=int, default=14, help="Client ID")
-    parser.add_argument("--minprice", type=float, default=6.0, help="Minimum stock price allowed")
+    parser.add_argument("--minprice", type=float, default=DEFAULT_MIN_PRICE, help="Minimum stock price allowed")
     parser.add_argument("--minspymove", type=float, required=False, help="Min SPY move threshold")
     parser.add_argument("--maxspymove", type=float, required=False, help="Max SPY move threshold")
     parser.add_argument("--spyfile", type=str, default=DEFAULT_SPY_FILE, help="SPY change CSV")
