@@ -8,7 +8,17 @@ from datetime import date
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.config import OUT_DIR
-from src.features import calculate_session_id, add_lags_leads, add_rolling_features, calculate_orders, rally, matching_pairs_for_year, add_etf_specific_features
+from src.features import (
+    calculate_session_id,
+    add_lags_leads,
+    add_rolling_features,
+    calculate_orders,
+    rally,
+    matching_pairs_for_year,
+    add_etf_specific_features,
+    get_last_full_date,
+    filter_to_last_full_date,
+)
 from src.outputs import format_strat
 from src.get_etf_data import get_etf_data
 
@@ -23,8 +33,15 @@ def main():
         logger.error("No ETF data.")
         sys.exit(1)
 
-    max_date = prices.select(pl.col("date").max()).item()
-    logger.info(f"Max date: {max_date}")
+    # Determine last date with full data and filter out any trailing partial dates
+    last_full_date = get_last_full_date(prices)
+    logger.info(f"Last date with full ETF data: {last_full_date}")
+    if last_full_date is not None:
+        prices = prices.filter(pl.col("date") <= last_full_date)
+        max_date = last_full_date
+    else:
+        max_date = prices.select(pl.col("date").max()).item()
+    logger.info(f"Target date for ETF strategies: {max_date}")
     
     # Filter universe
     valid_symbols = prices.filter(

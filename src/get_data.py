@@ -116,6 +116,13 @@ def main():
     # 3. Combine and save
     prices_df = pl.concat(all_prices)
     
+    # Filter trailing partial dates (e.g. partial weekend prints) before saving
+    from src.features import filter_to_last_full_date, get_last_full_date
+    last_full_date = get_last_full_date(prices_df)
+    if last_full_date is not None:
+        logger.info(f"Last date with full data in fetched history: {last_full_date}")
+        prices_df = filter_to_last_full_date(prices_df)
+
     # Join with ticker details (name, market cap, etc.) if needed?
     # R script merges: prices = prices[...] %>% merge(stocklist, by.x='symbol', by.y='ticker')
     # So we should join tickers_df.

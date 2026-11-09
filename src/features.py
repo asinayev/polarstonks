@@ -1,5 +1,6 @@
 import polars as pl
 from datetime import date, timedelta
+from typing import Optional
 import numpy as np
 
 def calculate_session_id(df, gap_days=10):
@@ -368,3 +369,87 @@ def add_etf_specific_features(df):
     )
     
     return df
+
+def get_last_full_date(
+    df: pl.DataFrame,
+    date_col: str = "date",
+    symbol_col: str = "symbol",
+    min_ratio: float = 0.75,
+    lookback_days: int = 30,
+) -> Optional[date]:
+    """Dynamically determines the last date that contains a full day's worth of data.
+
+    A date is considered to have 'full data' if its active symbol count meets a
+    meaningful dynamic threshold relative to typical recent trading days (defined
+    by the 75th percentile / median of daily symbol counts over recent history).
+    This safely ignores partial or accidental data (e.g. weekend prints, aborted
+    ingestion, or early pre-market partial data) without hardcoding fixed thresholds.
+
+    Args:
+        df: Polars DataFrame containing daily price/market data.
+        date_col: Name of the date column.
+        symbol_col: Name of the symbol column.
+        min_ratio: Minimum ratio of daily count to typical count to be considered full.
+        lookback_days: Number of recent trading dates to evaluate for the baseline.
+
+    Returns:
+        The latest date with full data, or None if df is empty or missing date_col.
+    """
+    if df is None or df.is_empty():
+        return None
+
+    if date_col not in df.columns:
+        return None
+
+    if symbol_col in df.columns:
+        if "close" in df.columns:
+            valid_rows = df.filter(pl.col("close").is_not_null() & (pl.col("close") > 0))
+            target_df = valid_rows if not valid_rows.is_empty() else df
+        else:
+            target_df = df
+        counts_df = target_df.group_by(date_col).agg(
+            pl.col(symbol_col).n_unique().alias("count")
+        ).sort(date_col)
+    else:
+        counts_df = df.group_by(date_col).agg(
+            pl.len().alias("count")
+        ).sort(date_col)
+
+    if counts_df.is_empty():
+        return None
+
+    if counts_df.height == 1:
+        return counts_df[date_col][0]
+
+    recent = counts_df.tail(lookback_days)
+    baseline = recent["count"].max()
+    threshold = max(1.0, baseline * min_ratio)
+
+    full_days = counts_df.filter(pl.col("count") >= threshold)
+    if full_days.is_empty():
+        return counts_df.select(pl.col(date_col).max()).item()
+
+    return full_days.select(pl.col(date_col).max()).item()
+
+def filter_to_last_full_date(
+    df: pl.DataFrame,
+    date_col: str = "date",
+    symbol_col: str = "symbol",
+    min_ratio: float = 0.75,
+    lookback_days: int = 30,
+) -> pl.DataFrame:
+    """Filters dataframe to only include dates up to and including the last day with full data."""
+    if df is None or df.is_empty():
+        return df
+
+    last_date = get_last_full_date(
+        df,
+        date_col=date_col,
+        symbol_col=symbol_col,
+        min_ratio=min_ratio,
+        lookback_days=lookback_days,
+    )
+    if last_date is not None:
+        return df.filter(pl.col(date_col) <= last_date)
+    return df
+

@@ -95,6 +95,13 @@ def get_etf_data():
 
     prices_df = pl.concat(all_prices)
     
+    # Filter trailing partial dates (e.g. partial weekend prints) before returning
+    from src.features import filter_to_last_full_date, get_last_full_date
+    last_full_date = get_last_full_date(prices_df)
+    if last_full_date is not None:
+        logger.info(f"Last date with full ETF data in fetched history: {last_full_date}")
+        prices_df = filter_to_last_full_date(prices_df)
+
     # Merge with ticker details (category, leverage, name)
     # prices = prices[...] %>% merge(stocklist[,.(symbol=ticker, name, category, leverage)], all.x=T)
     

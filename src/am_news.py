@@ -8,7 +8,7 @@ import logging
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.config import POLYGON_KEY, OUT_DIR
-from src.features import calculate_session_id, add_lags_leads, add_rolling_features
+from src.features import calculate_session_id, add_lags_leads, add_rolling_features, filter_to_last_full_date
 from src.outputs import write_strat
 from src.polygon_client import PolygonClient
 
@@ -166,6 +166,7 @@ def main():
         sys.exit(1)
         
     prices = pl.read_parquet(prices_path) if prices_path.endswith('.parquet') else pl.read_csv(prices_path)
+    prices = filter_to_last_full_date(prices)
     
     # Filter last 150 days per symbol
     prices = prices.sort(["symbol", "date"])
