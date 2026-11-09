@@ -15,7 +15,6 @@ from src.features import (
     calculate_orders,
     rally,
     get_last_full_date,
-    filter_to_last_full_date,
 )
 from src.outputs import format_strat
 from src.polygon_client import PolygonClient
@@ -130,19 +129,11 @@ def main():
     # 2. Add Short Interest
     prices = add_short_interest(client, prices)
 
-    # Determine last date with full data and filter out any trailing partial dates
-    last_full_date = get_last_full_date(prices)
-    logger.info(f"Last date with full data: {last_full_date}")
-    if last_full_date is not None:
-        prices = prices.filter(pl.col("date") <= last_full_date)
-        max_date = last_full_date
-    else:
-        max_date = prices.select(pl.col("date").max()).item()
-    logger.info(f"Target date for short interest strategies: {max_date}")
-
     # 3. Features
     # R: prices = only_passing(prices, min_volume=0, min_close=0, last_n = 150)
     # Filter for symbols that exist on max_date and have volume/close > 0
+    max_date = get_last_full_date(prices)
+    logger.info(f"Target date for short interest strategies: {max_date}")
     passing_symbols = prices.filter(
         (pl.col("date") == max_date) & 
         (pl.col("close") > 0) & 

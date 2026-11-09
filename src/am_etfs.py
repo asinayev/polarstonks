@@ -17,7 +17,6 @@ from src.features import (
     matching_pairs_for_year,
     add_etf_specific_features,
     get_last_full_date,
-    filter_to_last_full_date,
 )
 from src.outputs import format_strat
 from src.get_etf_data import get_etf_data
@@ -33,15 +32,8 @@ def main():
         logger.error("No ETF data.")
         sys.exit(1)
 
-    # Determine last date with full data and filter out any trailing partial dates
-    last_full_date = get_last_full_date(prices)
-    logger.info(f"Last date with full ETF data: {last_full_date}")
-    if last_full_date is not None:
-        prices = prices.filter(pl.col("date") <= last_full_date)
-        max_date = last_full_date
-    else:
-        max_date = prices.select(pl.col("date").max()).item()
-    logger.info(f"Target date for ETF strategies: {max_date}")
+    max_date = get_last_full_date(prices)
+    logger.info(f"Max date: {max_date}")
     
     # Filter universe
     valid_symbols = prices.filter(

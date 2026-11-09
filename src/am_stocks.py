@@ -15,7 +15,6 @@ from src.features import (
     calculate_orders,
     rally,
     get_last_full_date,
-    filter_to_last_full_date,
 )
 from src.outputs import format_strat
 
@@ -41,12 +40,6 @@ def main():
         logger.error("Empty prices dataframe.")
         sys.exit(1)
 
-    # Determine last date with full data and filter out any trailing partial dates
-    last_full_date = get_last_full_date(prices)
-    logger.info(f"Last date with full data: {last_full_date}")
-    if last_full_date is not None:
-        prices = prices.filter(pl.col("date") <= last_full_date)
-
     # 2. Filter last 150 rows per symbol
     # Sort by symbol, date desc, take head 150, then sort back ascending
     prices = prices.sort(["symbol", "date"], descending=[False, True])
@@ -63,7 +56,7 @@ def main():
     prices = calculate_orders(prices) # vp_order, cap_order
     
     # 4. Strategies
-    max_date = last_full_date if last_full_date is not None else prices.select(pl.col("date").max()).item()
+    max_date = get_last_full_date(prices)
     logger.info(f"Applying strategies for date: {max_date}")
 
     # Strategies handled by src.outputs.format_strat
