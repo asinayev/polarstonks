@@ -22,3 +22,9 @@
 
 ## 4. Google Sheets & Data Formats
 - Allocation sheets (e.g. `gid=1955878182`) use a **horizontal matrix table** where Row 0 contains strategy names across columns, and subsequent rows contain date + dollar allocations. Parsing functions should support both horizontal matrix layouts and standard vertical 2-column key-value CSVs.
+
+## 5. Market Data & Date Handling
+- **Partial Weekend/Stray Data**: Data providers (e.g., Polygon daily aggregates) can occasionally return bars on non-trading days (such as Saturday OTC trades, test prints, or early morning pre-market records).
+- **Selecting Date for Strategy Outputs**: Never use naive `prices.select(pl.col("date").max()).item()` to select the day to print out data. Doing so can cause Monday runs to pick up partial Saturday data (e.g., 2-3 tickers) and produce empty strategy outputs. Always use `get_last_full_date(prices)` from `src.features`, which dynamically verifies that the daily active symbol count meets universe capacity (e.g. $\ge 75\%$ of the rolling peak).
+- **No Early Date Truncation**: Do NOT filter or prune the `prices` DataFrame by date before rolling calculations (`add_rolling_features`, `rally`, `calculate_orders`) or universe membership filtering. Keep the historical series intact and apply the `max_date` filter only at the final step when generating today's output (`today_prices = prices.filter(pl.col("date") == max_date)`).
+
